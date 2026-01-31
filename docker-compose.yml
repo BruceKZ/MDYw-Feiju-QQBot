@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  napcat:
+    image: mlikiowa/napcat-docker:latest
+    container_name: napcat
+    restart: always
+    environment:
+      - ACCOUNT=${NAPCAT_ACCOUNT}
+      - WS_ENABLE=true
+      - NAPCAT_GID=0
+      - NAPCAT_UID=0
+      - ONEBOT_ACCESS_TOKEN=${ONEBOT_ACCESS_TOKEN}
+    ports:
+      - "6099:6099" # Web 管理面板
+      - "3001:3001" # 消息端口
+    volumes:
+      - ./napcat/config:/app/napcat/config
+      - ./napcat/qq:/app/.config/QQ
+    networks:
+      - bot_network
+
+  nonebot:
+    build:
+      context: ./mdy_feiju
+      dockerfile: Dockerfile
+    container_name: nonebot
+    restart: always
+    environment:
+      - ENVIRONMENT=prod
+      - ONEBOT_ACCESS_TOKEN=${ONEBOT_ACCESS_TOKEN}
+      - SUPERUSERS=${SUPERUSERS}
+      - MEME_DB_PATH=/data/memes.db
+      - ONEBOT_WS_URLS=["ws://napcat:3001"]
+    volumes:
+      - ./mdy_feiju/data:/data
+    depends_on:
+      - napcat
+    networks:
+      - bot_network
+
+networks:
+  bot_network:
+    driver: bridge

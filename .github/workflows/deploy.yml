@@ -1,0 +1,30 @@
+name: Deploy to Windows ITX
+
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: [self-hosted, Windows, X64]
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Create .env file
+      shell: pwsh
+      run: |
+        Set-Content -Path .env -Value "NAPCAT_ACCOUNT=${{ secrets.NAPCAT_ACCOUNT }}"
+        Add-Content -Path .env -Value "ONEBOT_ACCESS_TOKEN=${{ secrets.ONEBOT_ACCESS_TOKEN }}"
+        Add-Content -Path .env -Value "SUPERUSERS=${{ secrets.SUPERUSERS }}"
+
+    - name: Deploy NapCat (Ensure Running)
+      run: docker compose up -d napcat
+
+    - name: Deploy NoneBot (Rebuild and Restart)
+      run: docker compose up -d --build nonebot
+
+    - name: Prune Dangling Images
+      run: docker image prune -f

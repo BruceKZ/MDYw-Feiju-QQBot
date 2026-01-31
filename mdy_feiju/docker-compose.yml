@@ -1,0 +1,18 @@
+services:
+  bot:
+    build: .
+    volumes:
+      - ./data:/data
+    environment:
+      - MEME_DB_PATH=/data/memes.db
+      - DRIVER=~fastapi+~websockets
+      - HOST=0.0.0.0
+      - PORT=8080
+      - SUPERUSERS=["245706877"]
+      - COMMAND_START=["/"]
+      # Assuming OneBot is running on the host machine at port 3001
+      - ONEBOT_WS_URLS=["ws://host.docker.internal:3001"]
+      - ONEBOT_ACCESS_TOKEN=napcat
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: always
