@@ -4,7 +4,7 @@ import imagehash
 from io import BytesIO
 from pathlib import Path
 from PIL import Image
-from nonebot import on_regex, on_message, on_startswith, get_driver
+from nonebot import on_regex, on_message, on_startswith, get_driver, on_command
 from nonebot.adapters.onebot.v11 import Bot, Event, MessageSegment, GroupMessageEvent, MessageEvent, PrivateMessageEvent
 from nonebot.log import logger
 
@@ -279,7 +279,7 @@ async def _(bot: Bot, event: MessageEvent):
 
 # 4. Sync Meme: "/sync source_group target_group keyword" (Superuser & Private only)
 # Supports 'p' prefix for private chat (e.g., p12345)
-sync_cmd = on_regex(r"^/同步\s+([pP]?\d+)\s+([pP]?\d+)\s+(.+)$", priority=5, block=True)
+sync_cmd = on_command("同步", priority=5, block=True)
 
 @sync_cmd.handle()
 async def _(bot: Bot, event: PrivateMessageEvent):
@@ -288,13 +288,24 @@ async def _(bot: Bot, event: PrivateMessageEvent):
         await sync_cmd.finish("你不是超管，不能用这个命令")
         return
 
-    match = re.match(r"^/同步\s+([pP]?\d+)\s+([pP]?\d+)\s+(.+)$", event.get_plaintext().strip())
-    if not match:
+    # Get arguments
+    # remove the command itself
+    msg = event.get_plaintext().strip()
+    # Handle cases where command might be "/同步" or "同步"
+    if msg.startswith("/同步"):
+        msg = msg[3:].strip()
+    elif msg.startswith("同步"):
+        msg = msg[2:].strip()
+        
+    parts = msg.split()
+    if len(parts) < 3:
+        await sync_cmd.finish("格式错误！\n请发送：/同步 [源ID] [目标ID] [关键词]")
         return
-    
-    raw_source = match.group(1)
-    raw_target = match.group(2)
-    keyword = match.group(3).strip()
+        
+    raw_source = parts[0]
+    raw_target = parts[1]
+    # The rest is the keyword
+    keyword = " ".join(parts[2:]).strip()
 
     def parse_context(raw: str) -> str:
         if raw.lower().startswith('p'):
