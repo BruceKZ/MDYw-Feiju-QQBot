@@ -278,7 +278,8 @@ async def _(bot: Bot, event: MessageEvent):
         return
 
 # 4. Sync Meme: "/sync source_group target_group keyword" (Superuser & Private only)
-sync_cmd = on_regex(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", priority=5, block=True)
+# Supports 'p' prefix for private chat (e.g., p12345)
+sync_cmd = on_regex(r"^/同步\s+([pP]?\d+)\s+([pP]?\d+)\s+(.+)$", priority=5, block=True)
 
 @sync_cmd.handle()
 async def _(bot: Bot, event: PrivateMessageEvent):
@@ -287,23 +288,31 @@ async def _(bot: Bot, event: PrivateMessageEvent):
         await sync_cmd.finish("你不是超管，不能用这个命令")
         return
 
-    match = re.match(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", event.get_plaintext().strip())
+    match = re.match(r"^/同步\s+([pP]?\d+)\s+([pP]?\d+)\s+(.+)$", event.get_plaintext().strip())
     if not match:
         return
     
-    source_group = match.group(1)
-    target_group = match.group(2)
+    raw_source = match.group(1)
+    raw_target = match.group(2)
     keyword = match.group(3).strip()
+
+    def parse_context(raw: str) -> str:
+        if raw.lower().startswith('p'):
+            return f"private_{raw[1:]}"
+        return raw
+
+    source_group = parse_context(raw_source)
+    target_group = parse_context(raw_target)
     
     # 1. Check Source Category
     source_cat_id = get_category_id(keyword.lower(), source_group)
     if not source_cat_id:
-        await sync_cmd.finish(f"源群 ({source_group}) 没有关于 '{keyword}' 的图片。")
+        await sync_cmd.finish(f"源 ({source_group}) 没有关于 '{keyword}' 的图片。")
         
     # 2. Get Source Images
     images = get_all_images(source_cat_id)
     if not images:
-        await sync_cmd.finish(f"源群 ({source_group}) 的 '{keyword}' 是空的。")
+        await sync_cmd.finish(f"源 ({source_group}) 的 '{keyword}' 是空的。")
         
     # 3. Get/Create Target Category
     target_cat_id = get_category_id(keyword.lower(), target_group)
