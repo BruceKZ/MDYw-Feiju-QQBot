@@ -284,6 +284,7 @@ sync_cmd = on_regex(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", priority=5, block=True)
 async def _(bot: Bot, event: PrivateMessageEvent):
     # Check Superuser
     if str(event.user_id) not in get_driver().config.superusers:
+        await sync_cmd.finish("你不是超管，不能用这个命令")
         return
 
     match = re.match(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", event.get_plaintext().strip())
