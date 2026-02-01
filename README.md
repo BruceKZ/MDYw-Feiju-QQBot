@@ -80,5 +80,5 @@ docker-compose up -d
 *   Python 代码位于 `mdy_feiju/src/`。
 *   修改代码后，重启 NoneBot 容器即可生效 (取决于是否挂载了源码，当前配置需重建或重启)。
 ```shell
-docker-compose up -d --build nonebot
+docker-compose up -d --build nonebot 
 ```
