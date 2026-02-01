@@ -11,7 +11,7 @@ from nonebot.log import logger
 from .db import (
     init_db, get_category_id, create_category, add_image, 
     get_random_image, check_duplicate, delete_image_by_hash,
-    migrate_lowercase_categories, resize_existing_images
+    migrate_lowercase_categories, resize_existing_images, get_all_images
 )
 
 MAX_DIMENSION = 512
@@ -276,3 +276,49 @@ async def _(bot: Bot, event: MessageEvent):
     except Exception as e:
         await del_meme_cmd.send(f"删除失败：{e}，{category_name}别走😭")
         return
+
+# 4. Sync Meme: "/sync source_group target_group keyword" (Superuser & Private only)
+sync_cmd = on_regex(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", priority=5, block=True)
+
+@sync_cmd.handle()
+async def _(bot: Bot, event: PrivateMessageEvent):
+    # Check Superuser
+    if str(event.user_id) not in get_driver().config.superusers:
+        return
+
+    match = re.match(r"^/同步\s+(\d+)\s+(\d+)\s+(.+)$", event.get_plaintext().strip())
+    if not match:
+        return
+    
+    source_group = match.group(1)
+    target_group = match.group(2)
+    keyword = match.group(3).strip()
+    
+    # 1. Check Source Category
+    source_cat_id = get_category_id(keyword.lower(), source_group)
+    if not source_cat_id:
+        await sync_cmd.finish(f"源群 ({source_group}) 没有关于 '{keyword}' 的图片。")
+        
+    # 2. Get Source Images
+    images = get_all_images(source_cat_id)
+    if not images:
+        await sync_cmd.finish(f"源群 ({source_group}) 的 '{keyword}' 是空的。")
+        
+    # 3. Get/Create Target Category
+    target_cat_id = get_category_id(keyword.lower(), target_group)
+    if not target_cat_id:
+        target_cat_id = create_category(keyword.lower(), target_group)
+        
+    # 4. Sync
+    count = 0
+    skipped = 0
+    
+    for img_data, img_phash in images:
+        if check_duplicate(target_cat_id, img_phash):
+            skipped += 1
+            continue
+            
+        add_image(target_cat_id, img_data, img_phash)
+        count += 1
+        
+    await sync_cmd.finish(f"同步完成！\n关键字: {keyword}\n成功同步: {count} 张\n跳过重复: {skipped} 张")

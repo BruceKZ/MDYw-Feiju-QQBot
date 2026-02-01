@@ -88,6 +88,17 @@ def get_all_images_hashes(category_id: int) -> List[str]:
     conn.close()
     return [r[0] for r in results]
 
+def get_all_images(category_id: int) -> List[Tuple[bytes, str]]:
+    """
+    Get all images (data and hash) for a category.
+    """
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("SELECT data, phash FROM images WHERE category_id = ?", (category_id,))
+    results = cursor.fetchall()
+    conn.close()
+    return results
+
 def delete_image_by_hash(category_id: int, target_phash: str, threshold: int = 3) -> bool:
     """
     Finds an image in the category with a similar hash and deletes it.
