@@ -21,3 +21,6 @@ napcat/logs/
 # OS
 .DS_Store
 Thumbs.db
+
+# Database
+*.db
