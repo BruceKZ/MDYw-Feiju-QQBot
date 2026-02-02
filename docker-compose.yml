@@ -29,10 +29,10 @@ services:
       - ENVIRONMENT=prod
       - ONEBOT_ACCESS_TOKEN=${ONEBOT_ACCESS_TOKEN}
       - SUPERUSERS=${SUPERUSERS}
-      - MEME_DB_PATH=/data/memes.db
+      - MEME_DB_PATH=/app/data/memes.db
       - ONEBOT_WS_URLS=["ws://napcat:3001"]
     volumes:
-      - ./mdy_feiju/data:/data
+      - ./mdy_feiju/data:/app/data
     depends_on:
       - napcat
     networks:

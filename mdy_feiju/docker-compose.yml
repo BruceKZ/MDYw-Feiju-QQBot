@@ -2,9 +2,9 @@ services:
   bot:
     build: .
     volumes:
-      - ./data:/data
+      - ./data:/app/data
     environment:
-      - MEME_DB_PATH=/data/memes.db
+      - MEME_DB_PATH=/app/data/memes.db
       - DRIVER=~fastapi+~websockets
       - HOST=0.0.0.0
       - PORT=8080
