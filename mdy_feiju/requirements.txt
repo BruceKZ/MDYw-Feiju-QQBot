@@ -101,3 +101,6 @@ yarl==1.22.0
 zipp==3.23.0
 jieba
 wordcloud
+spacy>=3.5.0
+sudachipy>=0.6.7
+sudachidict-core>=20230110
