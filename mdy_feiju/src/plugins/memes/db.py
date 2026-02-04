@@ -22,6 +22,7 @@ def init_db():
     if cursor.fetchone():
         print("Detected legacy schema (categories). Starting migration...")
         migrate_v2(conn)
+    
     else:
         # Create libraries table
         cursor.execute("""
@@ -55,6 +56,10 @@ def init_db():
         )
         """)
     
+    
+    # Run hash migration (phash -> dhash)
+    migrate_to_dhash(conn)
+
     conn.commit()
     conn.close()
 
@@ -249,24 +254,67 @@ def get_all_images(library_id: int) -> List[Tuple[bytes, str]]:
     conn.close()
     return results
 
-def check_duplicate(library_id: int, new_phash: str, threshold: int = 3) -> bool:
+def check_duplicate(library_id: int, new_phash: str, threshold: int = 18) -> Tuple[bool, Optional[bytes]]:
+    """
+    Check if an image with similar hash already exists.
+    Returns (is_duplicate, duplicate_image_data) tuple.
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT phash FROM images WHERE library_id = ?", (library_id,))
+    cursor.execute("SELECT phash, data FROM images WHERE library_id = ?", (library_id,))
     images = cursor.fetchall()
     conn.close()
     
     new_hash_obj = imagehash.hex_to_hash(new_phash)
     
-    for (img_phash,) in images:
+    for img_phash, img_data in images:
         try:
             current_hash_obj = imagehash.hex_to_hash(img_phash)
             if new_hash_obj - current_hash_obj <= threshold:
-                return True
+                return True, img_data
         except Exception:
             continue
             
-    return False
+    return False, None
+
+def migrate_to_dhash(conn: sqlite3.Connection):
+    """
+    Check if we need to migrate hashes (simple heuristic: recompute one and see if it matches).
+    Actually, to be safe, we just scan all images and recompute dhash.
+    If the stored hash is already dhash, it will just result in the same value (or close).
+    But since we don't know which algorithm generated the hash stored, better recompute all.
+    This might be slow for many images but ensures consistency.
+    """
+    cursor = conn.cursor()
+    print("Checking for image hash updates (migrating to dhash)...")
+    
+    try:
+        cursor.execute("SELECT id, data, phash FROM images")
+        images = cursor.fetchall()
+        
+        updated_count = 0
+        
+        for img_id, data, old_phash in images:
+            try:
+                img = Image.open(BytesIO(data))
+                new_hash = str(imagehash.dhash(img))
+                
+                # If hash is different significantly (or just different string), update it.
+                # Since phash and dhash are different algorithms, they will reliably be different strings.
+                if new_hash != old_phash:
+                    cursor.execute("UPDATE images SET phash = ? WHERE id = ?", (new_hash, img_id))
+                    updated_count += 1
+            except Exception as e:
+                print(f"Failed to rehash image {img_id}: {e}")
+                
+        if updated_count > 0:
+            conn.commit()
+            print(f"Updated hashes for {updated_count} images.")
+        else:
+            print("No hash updates needed.")
+            
+    except Exception as e:
+        print(f"Hash migration failed: {e}")
 
 def delete_image_by_hash(library_id: int, target_phash: str, threshold: int = 3) -> bool:
     conn = sqlite3.connect(DB_PATH)

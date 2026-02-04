@@ -14,7 +14,7 @@ async def init_data():
 
 async def handle_get_meme(matcher: Matcher, event: MessageEvent):
     msg = event.get_plaintext().strip()
-    match = re.match(r"^来只(.+)$", msg)
+    match = re.match(r"^来[只个点](.+)$", msg)
     if not match:
         return
     
@@ -23,20 +23,28 @@ async def handle_get_meme(matcher: Matcher, event: MessageEvent):
     
     img_data, matched_name = MemeManager.get_meme(raw_text, context_id)
     
+    
     if not matched_name:
-        await matcher.send(f"一张{raw_text}都没有，来鸡毛？")
-        return
+        await matcher.finish(f"一张{raw_text}都没有，来鸡毛？")
 
     if not img_data:
-        await matcher.send(f"一张{matched_name}都没有，来鸡毛？")
-        return
+        await matcher.finish(f"一张{matched_name}都没有，来鸡毛？")
         
-    await matcher.send(MessageSegment.image(img_data))
+    await matcher.finish(MessageSegment.image(img_data))
 
 async def handle_add_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
     msg = event.get_plaintext().strip()
     # Remove prefix "添加"
     category_name = msg[2:].strip()
+    if not category_name:
+        return
+
+    # Check for --force flag
+    force = False
+    if "--force" in category_name:
+        force = True
+        category_name = category_name.replace("--force", "").strip()
+    
     if not category_name:
         return
 
@@ -54,8 +62,13 @@ async def handle_add_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
         return
 
     context_id = get_context_id(event)
-    result = await MemeManager.add_meme(category_name, img_url, context_id)
-    await matcher.send(result)
+    result_msg, dup_img = await MemeManager.add_meme(category_name, img_url, context_id, force=force)
+    
+    if dup_img:
+        # If duplicate found, send message with the conflicting original image
+        await matcher.finish(result_msg + MessageSegment.image(dup_img))
+    else:
+        await matcher.finish(result_msg)
 
 async def handle_delete_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
     msg = event.get_plaintext().strip()
@@ -65,28 +78,28 @@ async def handle_delete_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
         return
 
     if not event.reply:
-        await matcher.send("删哪个")
+        await matcher.finish("删哪个")
         return
 
     if str(event.reply.sender.user_id) != str(bot.self_id):
-        await matcher.send("不是我发的你让我删？")
+        await matcher.finish("不是我发的你让我删？")
         return
 
     reply_msg = event.reply.message
     images = [seg for seg in reply_msg if seg.type == "image"]
     
     if not images:
-        await matcher.send("说鸡毛呢")
+        await matcher.finish("说鸡毛呢")
         return
 
     img_url = images[0].data.get("url")
     if not img_url:
-        await matcher.send("图寄了，不删了")
+        await matcher.finish("图寄了，不删了")
         return
 
     context_id = get_context_id(event)
     result = await MemeManager.delete_meme(category_name, img_url, context_id)
-    await matcher.send(result)
+    await matcher.finish(result)
 
 async def handle_sync(matcher: Matcher, bot: Bot, event: PrivateMessageEvent):
     if str(event.user_id) not in get_driver().config.superusers:
@@ -115,10 +128,11 @@ async def handle_sync(matcher: Matcher, bot: Bot, event: PrivateMessageEvent):
 async def handle_help(matcher: Matcher):
     help_msg = (
         "✨ 表情包机器人指令列表 ✨\n"
-        "1. 来只[关键词]\n"
-        "   👉 获取表情包，例如：来只哆啦A梦\n"
+        "1. 来只/来个[关键词]\n"
+        "   👉 获取表情包，例如：来只哆啦A梦、来个猫猫\n"
         "2. 添加[关键词] [图片]\n"
         "   👉 回复图片发送：添加哆啦A梦\n"
+        "   💡 添加 --force 跳过查重：添加哆啦A梦 --force\n"
         "3. 删除[关键词] [图片]\n"
         "   👉 回复图片发送：删除哆啦A梦\n"
         "4. 添加别名 [原名] [别名]\n"

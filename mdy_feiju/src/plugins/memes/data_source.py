@@ -30,7 +30,13 @@ class MemeManager:
         return None, ""
 
     @staticmethod
-    async def add_meme(category_name: str, img_url: str, context_id: str) -> str:
+    async def add_meme(category_name: str, img_url: str, context_id: str, force: bool = False) -> Tuple[str, Optional[bytes]]:
+        """
+        Add a meme to the library.
+        Returns (result_message, duplicate_image_data).
+        If duplicate_image_data is not None, means a duplicate was found.
+        If force=True, skip duplicate check and add directly.
+        """
         try:
             raw_img_data = await download_url(img_url)
                 
@@ -39,22 +45,24 @@ class MemeManager:
             
             # Calculate hash
             check_img = Image.open(BytesIO(final_img_data))
-            new_hash = str(imagehash.phash(check_img))
+            new_hash = str(imagehash.dhash(check_img))
             
             # Get or Create Category
             lib_id = db.get_library_id(category_name.lower(), context_id)
             if not lib_id:
                 lib_id = db.create_library(category_name.lower(), context_id)
                 
-            # Check duplicates
-            if db.check_duplicate(lib_id, new_hash):
-                return "水过了！你老冯的"
+            # Check duplicates (skip if force=True)
+            if not force:
+                is_dup, dup_img = db.check_duplicate(lib_id, new_hash)
+                if is_dup:
+                    return "水过了！你老冯的\n瞪大你的狗眼看看是不是这个：", dup_img
             
             db.add_image(lib_id, final_img_data, new_hash)
-            return f"成功添加{category_name}！"
+            return f"成功添加{category_name}！", None
 
         except Exception as e:
-            return f"添加失败：{e}"
+            return f"添加失败：{e}", None
 
     @staticmethod
     async def delete_meme(category_name: str, img_url: str, context_id: str) -> str:
@@ -62,7 +70,7 @@ class MemeManager:
             target_img_data = await download_url(img_url)
             
             target_img = Image.open(BytesIO(target_img_data))
-            target_hash = str(imagehash.phash(target_img))
+            target_hash = str(imagehash.dhash(target_img))
 
             lib_id = db.get_library_id(category_name.lower(), context_id)
             deleted = False
