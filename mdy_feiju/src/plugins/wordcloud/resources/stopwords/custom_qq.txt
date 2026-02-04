@@ -1,0 +1,66 @@
+# QQ 群聊特有停用词
+# QQ-specific stopwords for group chat
+
+# CQ 码残留
+[CQ:image]
+[CQ:face]
+[CQ:at]
+[CQ:reply]
+[CQ:record]
+[CQ:video]
+
+# 消息类型标记
+图片
+视频
+语音
+撤回
+红包
+表情
+转发
+分享
+文件
+
+# 常见无意义词
+南通
+就是
+这个
+什么
+怎么
+如果
+可以
+知道
+感觉
+一下
+还是
+不是
+没有
+那个
+为什么
+怎么样
+
+# URL 残留
+http
+https
+www
+com
+cn
+
+# 表情符号文字
+hhhh
+哈哈哈
+笑死
+hhhhh
+233
+666
+
+# 用户自定义停用词
+添加
+删除
+来只
+鸡毛
+
+今天
+昨天
+明天
+前天
+后天
