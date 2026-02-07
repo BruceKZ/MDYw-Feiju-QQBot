@@ -9,7 +9,7 @@ driver.on_startup(handlers.init_data)
 # --- Command Matchers ---
 
 # 1. Get Meme: "来只xxx" or "来个xxx"
-get_meme_cmd = on_regex(r"^来[只个点](.+)$", priority=10, block=True)
+get_meme_cmd = on_regex(r"^来[只个点之之](.+)$", priority=10, block=True)
 get_meme_cmd.handle()(handlers.handle_get_meme)
 
 # 2. Add Meme: "添加xxx"
