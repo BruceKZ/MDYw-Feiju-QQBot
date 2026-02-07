@@ -37,5 +37,5 @@ list_alias_cmd = on_startswith("查看别名", priority=10, block=True)
 list_alias_cmd.handle()(alias.handle_list_alias)
 
 # 8. Help: "/help"
-help_cmd = on_command("help", priority=10, block=True)
+help_cmd = on_command("有啥花活", priority=10, block=True)
 help_cmd.handle()(handlers.handle_help)

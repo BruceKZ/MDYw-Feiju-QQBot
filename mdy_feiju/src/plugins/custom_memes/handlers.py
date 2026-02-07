@@ -127,7 +127,7 @@ async def handle_sync(matcher: Matcher, bot: Bot, event: PrivateMessageEvent):
 
 async def handle_help(matcher: Matcher):
     help_msg = (
-        "✨ 表情包机器人指令列表 ✨\n"
+        "✨花活列表✨\n"
         "1. 来只/来个[关键词]\n"
         "   👉 获取表情包，例如：来只哆啦A梦、来个猫猫\n"
         "2. 添加[关键词] [图片]\n"
