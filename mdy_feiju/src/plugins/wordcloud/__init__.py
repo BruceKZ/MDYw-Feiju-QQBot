@@ -6,63 +6,30 @@ Advanced Multilingual Group Word Cloud Plugin for Nonebot2
 import time
 from typing import Dict
 
-from nonebot import on_command, on_message, on_fullmatch, get_driver
-from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment, Bot
+from nonebot import on_fullmatch, get_driver
+from nonebot.adapters.onebot.v11 import GroupMessageEvent, MessageSegment, Message
 from nonebot.matcher import Matcher
 from nonebot.log import logger
 
-from . import data_source, nlp_engine, renderer
+# Import shared_db
+try:
+    from ..shared_db import db as shared_db
+except ImportError:
+    # Fallback for dev environment or direct execution
+    from src.plugins.shared_db import db as shared_db
+
+from . import nlp_engine, renderer
 from .config import COOLDOWN_SECONDS, CACHE_EXPIRE_SECONDS
 
 # ============== 初始化 ==============
 
 driver = get_driver()
 
-
-@driver.on_startup
-async def _init():
-    """启动时初始化数据库"""
-    data_source.init_db()
-    logger.info("[WordCloud] Database initialized")
-    
-    # 清理7天前的旧消息
-    deleted = data_source.cleanup_old_messages(days=7)
-    if deleted > 0:
-        logger.info(f"[WordCloud] Cleaned up {deleted} old messages")
-
+# DB init moved to shared_db
 
 # ============== 消息记录器 ==============
 
-message_recorder = on_message(priority=99, block=False)
-
-
-@message_recorder.handle()
-async def record_message(event: GroupMessageEvent):
-    """记录所有群消息用于词云生成"""
-    msg = event.get_plaintext().strip()
-    
-    # 跳过空消息
-    if not msg:
-        return
-    
-    # 跳过命令 (以常见命令前缀开头)
-    if msg.startswith(("/", "!", "！", "。", "#")):
-        return
-    
-    # 跳过过短消息
-    if len(msg) < 2:
-        return
-    
-    # 保存到数据库
-    try:
-        data_source.save_message(
-            str(event.group_id),
-            str(event.user_id),
-            msg
-        )
-    except Exception as e:
-        logger.error(f"[WordCloud] Failed to save message: {e}")
-
+# Message recording is now handled by shared_db plugin
 
 # ============== 词云命令 ==============
 
@@ -96,18 +63,51 @@ async def handle_wordcloud(matcher: Matcher, event: GroupMessageEvent):
             logger.info(f"[WordCloud] Serving cached image for group {group_id}")
             await matcher.finish(MessageSegment.image(cached_img))
     
-    # 获取消息
-    messages = data_source.get_messages_last_24h(group_id)
+    # 获取消息 (fetch from shared_db)
+    raw_messages = shared_db.get_messages_last_24h(group_id)
     
-    if not messages:
+    if not raw_messages:
         await matcher.finish("过去24小时群里还没有足够的消息，生成不了词云！")
     
-    if len(messages) < 10:
-        await matcher.finish(f"消息太少了（仅{len(messages)}条），再聊一会儿再来吧！")
- 
+    import json
+
+    # Filter messages (convert raw to text, filter commands/short msg)
+    valid_texts = []
+    for raw_msg in raw_messages:
+        try:
+            # Try to parse as JSON (new format)
+            try:
+                segments = json.loads(raw_msg)
+                msg_obj = Message([MessageSegment(type=s['type'], data=s['data']) for s in segments])
+            except (json.JSONDecodeError, TypeError, KeyError):
+                # Fallback to string (old format)
+                msg_obj = Message(raw_msg)
+
+            # Extract plain text from raw CQ string
+            txt = msg_obj.extract_plain_text().strip()
+            
+            # Skip empty
+            if not txt:
+                continue
+            
+            # Skip commands
+            if txt.startswith(("/", "!", "！", "。", "#")):
+                continue
+            
+            # Skip short messages
+            if len(txt) < 2:
+                continue
+            
+            valid_texts.append(txt)
+        except Exception:
+            continue
+
+    if len(valid_texts) < 10:
+        await matcher.finish(f"消息太少了（仅{len(valid_texts)}条），再聊一会儿再来吧！")
+
     # 分词处理
     try:
-        word_freq = nlp_engine.tokenize_texts(messages)
+        word_freq = nlp_engine.tokenize_texts(valid_texts)
     except Exception as e:
         logger.error(f"[WordCloud] Tokenization failed: {e}")
         await matcher.finish("分词处理失败，请稍后重试")
@@ -139,6 +139,6 @@ async def handle_wordcloud(matcher: Matcher, event: GroupMessageEvent):
     for k in expired_keys:
         del _image_cache[k]
     
-    logger.info(f"[WordCloud] Generated for group {group_id}, words: {len(word_freq)}, messages: {len(messages)}")
+    logger.info(f"[WordCloud] Generated for group {group_id}, words: {len(word_freq)}, messages: {len(valid_texts)}")
     
     await matcher.finish(MessageSegment.image(img_bytes))
