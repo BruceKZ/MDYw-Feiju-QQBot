@@ -1,6 +1,6 @@
 import re
-import httpx
 from typing import Optional
+from .data_source import get_client
 
 # Regex to match BV IDs (BV1xx411c7mD)
 # Case insensitive, usually starts with BV, followed by 10 alphanumeric chars
@@ -47,16 +47,16 @@ async def _resolve_short_link(url: str) -> Optional[str]:
     Resolve b23.tv short link to long URL using HTTP HEAD/GET.
     """
     try:
-        async with httpx.AsyncClient(follow_redirects=True) as client:
-            resp = await client.head(url, timeout=5.0)
-            # Sometimes HEAD might not work or return the final URL if it's a client-side split
-            # But b23.tv usually redirects via 302
-            
-            # If HEAD doesn't give a 3xx/location, try GET (slower but more reliable for some shorteners)
-            if resp.status_code == 200 and 'bilibili.com' not in str(resp.url):
-                 resp = await client.get(url, timeout=5.0)
+        client = await get_client()
+        # Use HEAD first to avoid downloading body
+        resp = await client.head(url)
+        
+        # If HEAD doesn't give a 3xx/location, try GET (slower but more reliable for some shorteners)
+        # But if standard b23.tv redirect works, resp.url should already be the target
+        if resp.status_code == 200 and 'bilibili.com' not in str(resp.url):
+             resp = await client.get(url)
 
-            return str(resp.url)
+        return str(resp.url)
     except Exception as e:
         # Generate some logs if possible, or just return None
         print(f"Error resolving short link {url}: {e}")

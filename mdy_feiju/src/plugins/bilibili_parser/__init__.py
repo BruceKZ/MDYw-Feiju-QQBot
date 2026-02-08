@@ -38,7 +38,7 @@ async def handle_link(bot: Bot, event: GroupMessageEvent, state: T_State):
         return
         
     # Construct response
-    msg = render_card_response(video)
+    msg = MessageSegment.reply(event.message_id) + render_card_response(video)
     await bilibili_link.finish(msg)
 
 
@@ -87,7 +87,7 @@ async def _process_card_bv(bv_id: str, bot: Bot, event: GroupMessageEvent):
     if not video:
         return
         
-    summary = render_text_summary(video)
+    summary = MessageSegment.reply(event.message_id) + render_text_summary(video)
     
     # Reply with text summary
     await bilibili_card.finish(summary)
