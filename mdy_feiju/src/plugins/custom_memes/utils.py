@@ -4,7 +4,7 @@ from PIL import Image
 from nonebot.adapters.onebot.v11 import GroupMessageEvent, PrivateMessageEvent, MessageEvent
 from nonebot.log import logger
 
-MAX_DIMENSION = 512
+MAX_DIMENSION = 2048
 
 def resize_image(img_data: bytes) -> bytes:
     """
@@ -71,7 +71,15 @@ def get_context_id(event: MessageEvent) -> str:
         return f"unknown_{event.user_id}"
 
 async def download_url(url: str) -> bytes:
-    async with httpx.AsyncClient() as client:
-        resp = await client.get(url)
-        resp.raise_for_status()
-        return resp.content
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(url)
+                resp.raise_for_status()
+                return resp.content
+        except (httpx.RequestError, httpx.HTTPStatusError) as e:
+            if attempt == max_retries:
+                logger.error(f"Failed to download image after {max_retries} retries: {e}")
+                raise e
+            logger.warning(f"Download failed (attempt {attempt + 1}/{max_retries + 1}), retrying... Error: {e}")

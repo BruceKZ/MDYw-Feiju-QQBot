@@ -9,7 +9,7 @@ driver.on_startup(handlers.init_data)
 # --- Command Matchers ---
 
 # 1. Get Meme: "来只xxx" or "来个xxx"
-get_meme_cmd = on_regex(r"^来[只个点之之](.+)$", priority=10, block=True)
+get_meme_cmd = on_regex(r"^来[只个点之](.+)$", priority=10, block=True)
 get_meme_cmd.handle()(handlers.handle_get_meme)
 
 # 2. Add Meme: "添加xxx"
@@ -36,6 +36,10 @@ del_alias_cmd.handle()(alias.handle_del_alias)
 list_alias_cmd = on_startswith("查看别名", priority=10, block=True)
 list_alias_cmd.handle()(alias.handle_list_alias)
 
-# 8. Help: "/help"
+# 8. List Memes: "查看图库"
+list_memes_cmd = on_startswith("查看图库", priority=10, block=True)
+list_memes_cmd.handle()(handlers.handle_list_memes)
+
+# 9. Help: "/help"
 help_cmd = on_command("有啥花活", priority=10, block=True)
 help_cmd.handle()(handlers.handle_help)

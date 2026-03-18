@@ -1,5 +1,7 @@
 import re
-from nonebot.adapters.onebot.v11 import Bot, MessageEvent, PrivateMessageEvent, MessageSegment
+import json
+import base64
+from nonebot.adapters.onebot.v11 import Bot, MessageEvent, PrivateMessageEvent, MessageSegment, Message
 from nonebot.matcher import Matcher
 from nonebot import get_driver
 
@@ -14,23 +16,22 @@ async def init_data():
 
 async def handle_get_meme(matcher: Matcher, event: MessageEvent):
     msg = event.get_plaintext().strip()
-    match = re.match(r"^来[只个点](.+)$", msg)
+    match = re.match(r"^来[只个点之](.+)$", msg)
     if not match:
         return
     
     raw_text = match.group(1).strip()
     context_id = get_context_id(event)
     
-    img_data, matched_name = MemeManager.get_meme(raw_text, context_id)
-    
+    result, matched_name = MemeManager.get_meme(raw_text, context_id)
     
     if not matched_name:
         await matcher.finish(f"一张{raw_text}都没有，来鸡毛？")
 
-    if not img_data:
+    if not result:
         await matcher.finish(f"一张{matched_name}都没有，来鸡毛？")
         
-    await matcher.finish(MessageSegment.image(img_data))
+    await matcher.finish(result)
 
 async def handle_add_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
     msg = event.get_plaintext().strip()
@@ -52,20 +53,32 @@ async def handle_add_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
         return
 
     reply_msg = event.reply.message
-    images = [seg for seg in reply_msg if seg.type == "image"]
-    
-    if not images:
-        return
-
-    img_url = images[0].data.get("url")
-    if not img_url:
-        return
+    # No longer require images check here, as we support text
 
     context_id = get_context_id(event)
-    result_msg, dup_img = await MemeManager.add_meme(category_name, img_url, context_id, force=force)
+    result_msg, dup_img = await MemeManager.add_meme(category_name, reply_msg, context_id, force=force)
     
     if dup_img:
-        # If duplicate found, send message with the conflicting original image
+        # If duplicate found, send message with the conflicting original image/content
+        # Check if dup_img is JSON (mixed) or bytes (image)
+        try:
+             # Try to parse as JSON list
+            content = json.loads(dup_img.decode("utf-8"))
+            if isinstance(content, list):
+                 # Construct message
+                 dup_msg = Message()
+                 for seg in content:
+                    if seg["type"] == "text":
+                        dup_msg.append(MessageSegment.text(seg["data"]["text"]))
+                    elif seg["type"] == "image":
+                        img_bytes = base64.b64decode(seg["data"]["file"])
+                        dup_msg.append(MessageSegment.image(img_bytes))
+                 await matcher.finish(result_msg + dup_msg)
+                 return
+        except Exception:
+            pass
+            
+        # Fallback to pure image
         await matcher.finish(result_msg + MessageSegment.image(dup_img))
     else:
         await matcher.finish(result_msg)
@@ -86,19 +99,11 @@ async def handle_delete_meme(matcher: Matcher, bot: Bot, event: MessageEvent):
         return
 
     reply_msg = event.reply.message
-    images = [seg for seg in reply_msg if seg.type == "image"]
-    
-    if not images:
-        await matcher.finish("说鸡毛呢")
-        return
-
-    img_url = images[0].data.get("url")
-    if not img_url:
-        await matcher.finish("图寄了，不删了")
-        return
+    # No longer require images check here
 
     context_id = get_context_id(event)
-    result = await MemeManager.delete_meme(category_name, img_url, context_id)
+    # Pass message object directly
+    result = await MemeManager.delete_meme(category_name, reply_msg, context_id)
     await matcher.finish(result)
 
 async def handle_sync(matcher: Matcher, bot: Bot, event: PrivateMessageEvent):
@@ -125,22 +130,80 @@ async def handle_sync(matcher: Matcher, bot: Bot, event: PrivateMessageEvent):
     result = MemeManager.sync_memes(raw_source, raw_target, keyword)
     await matcher.finish(result)
 
+async def handle_list_memes(matcher: Matcher, bot: Bot, event: MessageEvent):
+    context_id = get_context_id(event)
+    memes = MemeManager.get_all_memes(context_id)
+    
+    if not memes:
+        await matcher.finish("当前群没有任何图库")
+        return
+
+    # Construct Forward Message
+    msgs = []
+    
+    # Header node
+    # Use bot's own ID and name for the node to validity
+    # Or just use a fixed valid integer ID. "10000" is usually safe fake ID.
+    sender_id = str(event.user_id)
+    sender_name = event.sender.nickname or "Bot"
+    
+    msgs.append(
+        MessageSegment.node_custom(
+            user_id=sender_id, # Use sender's ID to look like they sent it, or bot's ID
+            nickname=sender_name,
+            content=Message(f"当前群共有 {len(memes)} 个图库")
+        )
+    )
+    
+    chunk_size = 50
+    for i in range(0, len(memes), chunk_size):
+        chunk = memes[i:i + chunk_size]
+        text = "\n".join(chunk)
+        msgs.append(
+            MessageSegment.node_custom(
+                user_id=sender_id,
+                nickname=sender_name,
+                content=Message(text)
+            )
+        )
+        
+    try:
+        if isinstance(event, PrivateMessageEvent):
+             # Private forward message
+             await bot.send_private_forward_msg(user_id=event.user_id, messages=msgs)
+        else:
+             # Group message - use send_group_forward_msg API for better compatibility
+             # Note: messages argument in onebot v11 adapter expects list of nodes
+             await bot.send_group_forward_msg(group_id=event.group_id, messages=msgs)
+             
+    except Exception as e:
+        # Avoid catching FinishedException if it somehow occurs
+        from nonebot.exception import FinishedException
+        if isinstance(e, FinishedException):
+            raise e
+            
+        import traceback
+        traceback.print_exc()
+        await matcher.finish(f"发送合并消息失败：{e}\n请检查Bot是否有发送合并消息的权限。")
+
 async def handle_help(matcher: Matcher):
     help_msg = (
         "✨花活列表✨\n"
         "1. 来只/来个[关键词]\n"
         "   👉 获取表情包，例如：来只哆啦A梦、来个猫猫\n"
-        "2. 添加[关键词] [图片]\n"
-        "   👉 回复图片发送：添加哆啦A梦\n"
+        "2. 添加[关键词] [图片/文字]\n"
+        "   👉 回复图片或文字发送：添加哆啦A梦\n"
         "   💡 添加 --force 跳过查重：添加哆啦A梦 --force\n"
-        "3. 删除[关键词] [图片]\n"
-        "   👉 回复图片发送：删除哆啦A梦\n"
+        "3. 删除[关键词] [图片/文字]\n"
+        "   👉 回复我发的消息发送：删除哆啦A梦\n"
         "4. 添加别名 [原名] [别名]\n"
         "   👉 例如：添加别名 哆啦A梦 蓝胖子\n"
         "5. 删除别名 [别名]\n"
         "   👉 例如：删除别名 蓝胖子\n"
         "6. 查看别名 [关键词]\n"
-        "   👉 例如：查看别名 哆啦A梦\n\n"
+        "   👉 例如：查看别名 哆啦A梦\n"
+        "7. 查看图库\n"
+        "   👉 查看本群所有表情包库名\n\n"
         "⚠️ 注意：同步功能仅限超管使用"
     )
     await matcher.finish(help_msg)

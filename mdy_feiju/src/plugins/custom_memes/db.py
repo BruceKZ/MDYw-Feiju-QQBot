@@ -59,9 +59,32 @@ def init_db():
     
     # Run hash migration (phash -> dhash)
     migrate_to_dhash(conn)
+    
+    # Run V3 migration (add type column)
+    migrate_v3(conn)
 
     conn.commit()
     conn.close()
+
+def migrate_v3(conn: sqlite3.Connection):
+    """
+    Migrate to V3: Add 'type' column to images table.
+    Default value is 'image'.
+    """
+    cursor = conn.cursor()
+    try:
+        # Check if column exists
+        cursor.execute("PRAGMA table_info(images)")
+        columns = [info[1] for info in cursor.fetchall()]
+        
+        if "type" not in columns:
+            print("Migrating to V3 (Adding type column)...")
+            cursor.execute("ALTER TABLE images ADD COLUMN type TEXT DEFAULT 'image'")
+            print("Migration to V3 completed.")
+            
+    except Exception as e:
+        print(f"Migration V3 failed: {e}")
+        # Non-critical if it fails (maybe already exists?), but good to log.
 
 def migrate_v2(conn: sqlite3.Connection):
     """
@@ -121,12 +144,14 @@ def migrate_v2(conn: sqlite3.Connection):
             library_id INTEGER NOT NULL,
             data BLOB NOT NULL,
             phash TEXT NOT NULL,
+            type TEXT DEFAULT 'image',
             FOREIGN KEY(library_id) REFERENCES libraries(id) ON DELETE CASCADE
         )
         """)
         
         cursor.execute("SELECT id, category_id, data, phash FROM images")
         images = cursor.fetchall()
+        # insert with default type='image'
         cursor.executemany("INSERT INTO images_new (id, library_id, data, phash) VALUES (?, ?, ?, ?)", images)
         
         # 5. Drop old tables
@@ -229,52 +254,110 @@ def get_library_names(library_id: int) -> List[str]:
     conn.close()
     return [r[0] for r in results]
 
-# --- Image Operations (Updated for library_id) ---
-
-def add_image(library_id: int, data: bytes, phash: str):
+def get_all_library_names(group_id: str) -> List[Tuple[str, List[str]]]:
+    """
+    Get all library names for a group, grouped by library_id.
+    Returns a list of (primary_name, [aliases]).
+    """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("INSERT INTO images (library_id, data, phash) VALUES (?, ?, ?)", (library_id, data, phash))
+    cursor.execute("SELECT library_id, name FROM names WHERE group_id = ? ORDER BY library_id", (group_id,))
+    results = cursor.fetchall()
+    conn.close()
+    
+    current_lib_id = None
+    names_map = {}
+    
+    for lib_id, name in results:
+        if lib_id not in names_map:
+            names_map[lib_id] = []
+        names_map[lib_id].append(name)
+        
+    final_list = []
+    # Sort libraries by primary name? Or just by ID?
+    # Sorting by name makes more sense for user.
+    
+    for lib_id, names in names_map.items():
+        # Heuristic for primary name: shortest? or first one (which seems random without created_at in names)
+        # Let's verify `names` order? Query ordered by library_id, implying insertion order roughly if names inserted sequentially?
+        # Actually names are from `names` table which has no timestamp.
+        # But `ORDER BY library_id` groups them. 
+        # Inside group, maybe sort by length then alphabet.
+        sorted_names = sorted(names, key=lambda x: (len(x), x))
+        primary = sorted_names[0]
+        aliases = sorted_names[1:]
+        final_list.append((primary, aliases))
+        
+    # Sort final list by primary name
+    final_list.sort(key=lambda x: x[0])
+    
+    return final_list
+
+# --- Image Operations (Updated for library_id) ---
+
+def add_image(library_id: int, data: bytes, phash: str, meme_type: str = "image"):
+    conn = sqlite3.connect(DB_PATH)
+    cursor = conn.cursor()
+    cursor.execute("INSERT INTO images (library_id, data, phash, type) VALUES (?, ?, ?, ?)", (library_id, data, phash, meme_type))
     conn.commit()
     conn.close()
 
-def get_random_image(library_id: int) -> Optional[bytes]:
+def get_random_image(library_id: int) -> Tuple[Optional[bytes], str]:
+    """Returns (data, type)"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT data FROM images WHERE library_id = ? ORDER BY RANDOM() LIMIT 1", (library_id,))
+    # Handle legacy records where type might be null (though schema default handles it, but just in case)
+    cursor.execute("SELECT data, type FROM images WHERE library_id = ? ORDER BY RANDOM() LIMIT 1", (library_id,))
     result = cursor.fetchone()
     conn.close()
-    return result[0] if result else None
+    if result:
+        return result[0], (result[1] or "image")
+    return None, ""
 
-def get_all_images(library_id: int) -> List[Tuple[bytes, str]]:
+def get_all_images(library_id: int) -> List[Tuple[bytes, str, str]]:
+    """Returns list of (data, phash, type)"""
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT data, phash FROM images WHERE library_id = ?", (library_id,))
+    cursor.execute("SELECT data, phash, type FROM images WHERE library_id = ?", (library_id,))
     results = cursor.fetchall()
     conn.close()
-    return results
+    return [(r[0], r[1], (r[2] or "image")) for r in results]
 
-def check_duplicate(library_id: int, new_phash: str, threshold: int = 18) -> Tuple[bool, Optional[bytes]]:
+def check_duplicate(library_id: int, new_hash: str, meme_type: str = "image", threshold: int = 18) -> Tuple[bool, Optional[bytes]]:
     """
     Check if an image with similar hash already exists.
     Returns (is_duplicate, duplicate_image_data) tuple.
     """
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
-    cursor.execute("SELECT phash, data FROM images WHERE library_id = ?", (library_id,))
+    cursor.execute("SELECT phash, data, type FROM images WHERE library_id = ?", (library_id,))
     images = cursor.fetchall()
     conn.close()
     
-    new_hash_obj = imagehash.hex_to_hash(new_phash)
+    # Pre-parse hash for image types only if needed
+    if meme_type == "image":
+        new_hash_obj = imagehash.hex_to_hash(new_hash)
     
-    for img_phash, img_data in images:
-        try:
-            current_hash_obj = imagehash.hex_to_hash(img_phash)
-            if new_hash_obj - current_hash_obj <= threshold:
-                return True, img_data
-        except Exception:
+    for img_phash, img_data, img_type in images:
+        current_type = img_type or "image"
+        
+        # If types don't match, they aren't duplicates (e.g. text vs image)
+        if current_type != meme_type:
             continue
             
+        if meme_type == "image":
+            # DHash comparison
+            try:
+                current_hash_obj = imagehash.hex_to_hash(img_phash)
+                if new_hash_obj - current_hash_obj <= threshold:
+                    return True, img_data
+            except Exception:
+                continue
+        else:
+            # Exact match for text/mixed (hash is MD5)
+            if new_hash == img_phash:
+                return True, img_data
+                
     return False, None
 
 def migrate_to_dhash(conn: sqlite3.Connection):
@@ -286,13 +369,16 @@ def migrate_to_dhash(conn: sqlite3.Connection):
     This might be slow for many images but ensures consistency.
     """
     cursor = conn.cursor()
-    print("Checking for image hash updates (migrating to dhash)...")
-    
+    # Only migrate types that are 'image' or NULL
     try:
-        cursor.execute("SELECT id, data, phash FROM images")
+        cursor.execute("SELECT id, data, phash FROM images WHERE type IS NULL OR type='image'")
         images = cursor.fetchall()
         
         updated_count = 0
+        if not images:
+            return 
+
+        print("Checking for image hash updates (migrating to dhash)...")
         
         for img_id, data, old_phash in images:
             try:
@@ -305,36 +391,47 @@ def migrate_to_dhash(conn: sqlite3.Connection):
                     cursor.execute("UPDATE images SET phash = ? WHERE id = ?", (new_hash, img_id))
                     updated_count += 1
             except Exception as e:
-                print(f"Failed to rehash image {img_id}: {e}")
+                # This might happen if data is not a valid image
+                pass
                 
         if updated_count > 0:
             conn.commit()
             print(f"Updated hashes for {updated_count} images.")
-        else:
-            print("No hash updates needed.")
             
     except Exception as e:
         print(f"Hash migration failed: {e}")
 
-def delete_image_by_hash(library_id: int, target_phash: str, threshold: int = 3) -> bool:
+def delete_image_by_hash(library_id: int, target_hash: str, meme_type: str = "image", threshold: int = 3) -> bool:
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     
-    cursor.execute("SELECT id, phash FROM images WHERE library_id = ?", (library_id,))
+    cursor.execute("SELECT id, phash, type FROM images WHERE library_id = ?", (library_id,))
     images = cursor.fetchall()
     
-    target_hash_obj = imagehash.hex_to_hash(target_phash)
+    if meme_type == "image":
+        target_hash_obj = imagehash.hex_to_hash(target_hash)
     
-    for img_id, img_phash in images:
-        try:
-            current_hash_obj = imagehash.hex_to_hash(img_phash)
-            if target_hash_obj - current_hash_obj <= threshold:
+    for img_id, img_phash, img_type in images:
+        current_type = img_type or "image"
+        if current_type != meme_type:
+            continue
+            
+        if meme_type == "image":
+            try:
+                current_hash_obj = imagehash.hex_to_hash(img_phash)
+                if target_hash_obj - current_hash_obj <= threshold:
+                    cursor.execute("DELETE FROM images WHERE id = ?", (img_id,))
+                    conn.commit()
+                    conn.close()
+                    return True
+            except Exception:
+                continue
+        else:
+            if target_hash == img_phash:
                 cursor.execute("DELETE FROM images WHERE id = ?", (img_id,))
                 conn.commit()
                 conn.close()
                 return True
-        except Exception:
-            continue
             
     conn.close()
     return False
@@ -351,7 +448,8 @@ def resize_existing_images(max_dim: int = 512):
     cursor = conn.cursor()
     
     try:
-        cursor.execute("SELECT id, data FROM images")
+        # Only resize "image" type
+        cursor.execute("SELECT id, data FROM images WHERE type IS NULL OR type='image'")
         images = cursor.fetchall()
         
         count = 0
