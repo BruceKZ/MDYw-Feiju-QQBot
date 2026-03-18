@@ -104,4 +104,6 @@ wordcloud
 spacy>=3.5.0
 sudachipy>=0.6.7
 sudachidict-core>=20230110
+
 nonebot-plugin-memes>=0.4.0
+pyotp>=2.9.0
