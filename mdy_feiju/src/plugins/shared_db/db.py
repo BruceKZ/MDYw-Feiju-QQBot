@@ -6,7 +6,7 @@ from pathlib import Path
 from contextlib import contextmanager
 from typing import List, Optional, Tuple
 
-from .config import DATA_DIR, DB_FILE, WORDCLOUD_DB_FILE
+from .config import DATA_DIR, DB_FILE
 from nonebot.log import logger
 
 @contextmanager
@@ -21,14 +21,6 @@ def get_connection():
 def init_db():
     """Initialize database and migrate if needed"""
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Migration: Move old wordcloud DB if exists and new DB doesn't
-    if WORDCLOUD_DB_FILE.exists() and not DB_FILE.exists():
-        try:
-            shutil.copy2(WORDCLOUD_DB_FILE, DB_FILE)
-            logger.info(f"[SharedDB] Migrated database from {WORDCLOUD_DB_FILE}")
-        except Exception as e:
-            logger.error(f"[SharedDB] Failed to migrate database: {e}")
 
     with get_connection() as conn:
         cursor = conn.cursor()
@@ -103,18 +95,6 @@ def get_message_details(message_id: str) -> Optional[Tuple[str, str]]:
         )
         row = cursor.fetchone()
         return row if row else None
-
-def get_messages_last_24h(group_id: str) -> List[str]:
-    """Get messages from last 24h for wordcloud"""
-    cutoff_time = int(time.time()) - 86400
-    with get_connection() as conn:
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT content FROM messages WHERE group_id = ? AND timestamp >= ? ORDER BY timestamp DESC",
-            (group_id, cutoff_time)
-        )
-        rows = cursor.fetchall()
-    return [row[0] for row in rows]
 
 def cleanup_old_messages(days: int = 7):
     """Cleanup old messages"""
