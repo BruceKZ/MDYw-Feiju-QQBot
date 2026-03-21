@@ -107,3 +107,4 @@ sudachidict-core>=20230110
 
 nonebot-plugin-memes>=0.4.0
 pyotp>=2.9.0
+cryptography>=42.0.0

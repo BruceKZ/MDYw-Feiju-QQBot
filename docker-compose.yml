@@ -31,6 +31,9 @@ services:
       - SUPERUSERS=${SUPERUSERS}
       - MEME_DB_PATH=/app/data/memes.db
       - ONEBOT_WS_URLS=["ws://napcat:3001"]
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    ports:
+      - "8080:8080" # Webhook API
     volumes:
       - ./mdy_feiju/data:/app/data
     depends_on:
