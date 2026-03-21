@@ -9,9 +9,6 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir numpy
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Download Spacy English model for lemmatization
-RUN python -m spacy download en_core_web_sm
-
 COPY . .
 
 # Expose port
