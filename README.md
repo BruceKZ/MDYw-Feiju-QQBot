@@ -2,6 +2,17 @@
 
 基于 [NapCat](https://github.com/NapNeko/NapCat-Docker) (OneBot 11) + [NoneBot2](https://nonebot.dev/) 的 QQ 机器人项目。
 
+## ✨ 核心功能 (Core Features)
+
+本项目通过不断迭代，已集成了一系列强大的定制化功能和插件：
+
+*   **🛡️ 2FA 双重认证管理器**: 安全可靠地为指定用户/群组提供动态令牌(6位数)生成，支持超级管理员增加和管理密钥权限、管理用户备注，数据原生安全落盘于独立的本地 SQLite。
+*   **🖼️ 自定义梗图/表情包 (Custom Memes)**: 增强版自建库！支持通过指令添加、调取纯文本或图文混合的自定义表情消息与别名。(注：同时也集成了官方的 `nonebot-plugin-petpet` 和 `nonebot-plugin-memes`)
+*   **🔔 外部 Webhook 联动**: 内置对外 Webhook API 端点。可接收外部系统（如实验运行结束等）发送的 HTTP/JSON 数据，并在机器人上进行即时推送通知。
+*   **📺 B 站解析 (Bilibili Parser)**: 能够自动嗅探捕捉聊天中的 B 站视频连接/小程序，并解析返回详细信息。
+*   **👁️‍🗨️ 防撤回 (Anti-Recall)**: 捕捉并记录消息撤回动作。
+*   *(注：NTP 缓慢的时间同步功能与庞大杂乱的词云功能已在最近一次重构中移除)*
+
 ## 🚀 快速开始 (Windows / Mac / Linux)
 
 本项目已完全容器化，推荐使用 Docker 运行，无论是 Windows、Mac 还是 Linux 体验一致。
