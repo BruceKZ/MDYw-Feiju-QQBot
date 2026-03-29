@@ -11,6 +11,11 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Deploy manually added authentic OS fonts to linux global index
+RUN mkdir -p /usr/share/fonts/custom && \
+    cp -r src/plugins/codeforces/fonts/* /usr/share/fonts/custom/ 2>/dev/null || true && \
+    fc-cache -f -v
+
 # Expose port
 EXPOSE 8080
 
