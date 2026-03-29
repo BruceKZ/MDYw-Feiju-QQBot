@@ -16,13 +16,48 @@ REQUEST_INTERVAL_SEC = 2.2
 REQUEST_TIMEOUT_SEC = 90
 MAX_RETRIES = 5
 
-# Disk cache for contest rating changes (survives restarts)
-CACHE_DIR = Path(__file__).parent / "rating_cache"
+# Persistent cache directory (inside the /app/data volume for Docker persistence)
+DATA_ROOT = Path("/app/data/codeforces") if Path("/app/data").exists() else Path(__file__).parent / "data"
+CACHE_DIR = DATA_ROOT / "rating_cache"
+DATA_FILE = DATA_ROOT / "final_ratings.json"
 
 # In-memory sorted rating list for percentile calculation
 _rated_list: List[int] = []  # sorted descending
 _rated_list_timestamp: Optional[datetime] = None
 _total_active_users: int = 0
+
+def _save_final_data():
+    """Save the aggregated rating list and timestamp to disk."""
+    DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    if not _rated_list:
+        return
+    data = {
+        "timestamp": _rated_list_timestamp.isoformat() if _rated_list_timestamp else None,
+        "ratings": _rated_list
+    }
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    logger.info(f"Final rating list saved to {DATA_FILE}")
+
+def _load_final_data():
+    """Load the aggregated rating list from disk on startup."""
+    global _rated_list, _rated_list_timestamp, _total_active_users
+    if not DATA_FILE.exists():
+        return
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            _rated_list = data.get("ratings", [])
+            ts_str = data.get("timestamp")
+            if ts_str:
+                _rated_list_timestamp = datetime.fromisoformat(ts_str)
+            _total_active_users = len(_rated_list)
+        logger.info(f"Loaded {_total_active_users} users from persistent storage (Data Time: {_rated_list_timestamp})")
+    except Exception as e:
+        logger.error(f"Failed to load persistent rating data: {e}")
+
+# Load on module import
+_load_final_data()
 
 
 def get_cache_time() -> Optional[datetime]:
@@ -182,6 +217,9 @@ async def update_cache() -> Optional[datetime]:
             _total_active_users = len(ratings)
             _rated_list_timestamp = datetime.now(TZ_UTC8)
 
+            # Persist to disk so it survives restarts
+            _save_final_data()
+
             logger.info(
                 f"Rating cache updated: {_total_active_users} active users, "
                 f"{skipped} skipped, {failed} failed. "
@@ -194,9 +232,9 @@ async def update_cache() -> Optional[datetime]:
         return None
 
 
-def get_percentile(rating: int) -> Optional[float]:
+def get_percentile(rating: int) -> Optional[tuple]:
     """
-    Returns the Top X.XX% for a given rating based on cached data.
+    Returns (percent, rank, total) for a given rating based on cached data.
     Purely local — never triggers a network fetch.
     """
     if not _rated_list:
@@ -216,4 +254,4 @@ def get_percentile(rating: int) -> Optional[float]:
 
     rank = lo + 1
     percent = (rank / total) * 100
-    return percent
+    return (percent, rank, total)

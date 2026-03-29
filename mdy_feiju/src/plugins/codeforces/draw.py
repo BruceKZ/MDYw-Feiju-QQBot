@@ -74,7 +74,7 @@ async def fetch_avatar(url: str) -> BuildImage:
             return BuildImage.new("RGBA", (150, 150), (200, 200, 200, 255))
         return BuildImage.open(io.BytesIO(resp.content))
 
-async def draw_cf_card(user_info: dict, percent: float | None, cache_time = None) -> bytes:
+async def draw_cf_card(user_info: dict, rank_info: tuple | None, cache_time = None) -> bytes:
     rating = user_info.get("rating", 0)
     max_rating = user_info.get("maxRating", 0)
     title = user_info.get("rank", "unrated").title()
@@ -176,10 +176,12 @@ async def draw_cf_card(user_info: dict, percent: float | None, cache_time = None
             ])
         add_line(elements, margin_bottom=7)
     
-    # 6. Percentile block
-    if percent is not None and rating > 0:
+    # 6. Rank block
+    if rank_info is not None and rating > 0:
+        percent, rank, total = rank_info
+        rank_str = f"Top {percent:.2f}% · #{rank:,} / {total:,} active users"
         add_line([
-            (make_text(f"Top {percent:.2f}% of active users", 20, fill="black"), 0, 0)
+            (make_text(rank_str, 20, fill="black"), 0, 0)
         ], margin_bottom=7)
         
     # Inject a subtle horizontal gray divider with strictly verified geometric symmetry

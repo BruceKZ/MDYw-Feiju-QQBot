@@ -36,15 +36,15 @@ async def _(bot: Bot, event: MessageEvent, arg: Message = CommandArg()):
         
     # Percentile: purely from local cache
     rating = user_info.get("rating", 0)
-    percent = None
+    rank_info = None  # (percent, rank, total)
     if rating > 0:
-        percent = get_percentile(rating)
+        rank_info = get_percentile(rating)
     
     # Get the cache data timestamp for the card watermark
     cache_time = get_cache_time()
         
     try:
-        img_bytes = await draw_cf_card(user_info, percent, cache_time)
+        img_bytes = await draw_cf_card(user_info, rank_info, cache_time)
         await cf_cmd.finish(MessageSegment.image(img_bytes))
     except FinishedException:
         raise
